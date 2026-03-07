@@ -162,13 +162,20 @@ impl OpenAIClient {
             let completion: ChatCompletionResponse = self.get_completion(&prompts, &tools).await?;
             let response = completion.first().ok_or(Error::Response)?;
 
+            if let Some(assistant_message) = &response.content {
+                if !assistant_message.is_empty() {
+                    prompts.push(ChatCompletionMessageParam::new_assistant(assistant_message));
+                }
+            }
+
             if response.has_tools() {
                 let tool_response = response.call_tools(&tools).await;
                 prompts.push(ChatCompletionMessageParam::new_tool(tool_response));
-            }
-
-            if let Some(content) = &response.content {
-                break Ok(content.clone());
+            } else {
+                break Ok(response
+                    .content
+                    .clone()
+                    .unwrap_or(String::from("Agent did not respond on last turn.")));
             }
         }
     }
