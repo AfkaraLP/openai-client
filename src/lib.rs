@@ -21,7 +21,8 @@ compile_error!("You can only choose a single runtime");
 
 pub mod prelude;
 
-use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
     collections::{HashMap, hash_map::Values},
     pin::Pin,
@@ -34,14 +35,6 @@ pub enum Error {
     Request(reqwest::Error),
     Deserialization(serde_json::Error),
     Response,
-}
-
-/// Client for interacting with an openai compatible API.
-pub struct OpenAIClient {
-    pub url: String,
-    pub client: reqwest::Client,
-    pub model: String,
-    pub header_kv: Option<(String, String)>,
 }
 
 pub type BoxedTool<'a> = Box<dyn ToolCallFn + Send + Sync + 'a>;
@@ -72,6 +65,14 @@ impl<'a> ToolMap<'a> {
     }
 }
 
+/// Client for interacting with an openai compatible API.
+pub struct OpenAIClient {
+    pub url: String,
+    pub client: reqwest::Client,
+    pub model: String,
+    pub header_kv: Option<(String, String)>,
+}
+
 impl OpenAIClient {
     #[must_use]
     pub fn new(url: String, model: String, header_kv: Option<(String, String)>) -> Self {
@@ -94,6 +95,63 @@ impl OpenAIClient {
     pub fn set_bearer_auth(mut self, token: String) -> Self {
         self.header_kv = Some(("Authorization".into(), token));
         self
+    }
+
+    /// Get a response that fits a certain schema.
+    ///
+    /// # Usage
+    ///
+    /// ```rust
+    /// use openai_client::prelude::*;
+    /// use serde::{Serialize, Deserialize};
+    ///
+    /// #[derive(JsonSchema, Serialize, Deserialize)]
+    /// struct MyStruct {
+    ///     thing: String
+    /// }
+    ///
+    /// let client = OpenAIClient::new(
+    ///     "http://localhost:1234/v1".into(),
+    ///     "Qwen3/Qwen3-0.8B".into(),
+    ///     None,
+    /// );
+    ///
+    /// client.get_structured_response::<MyStruct>(&[ChatCompletionMessageParam::new_user("this is a test")]);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Can fail on API rejects or if the model does not respond with the correct struct
+    pub async fn get_structured_response<T: DeserializeOwned + JsonSchema>(
+        &self,
+        messages: &[ChatCompletionMessageParam],
+    ) -> Result<T> {
+        let schema = schemars::schema_for!(T);
+        let req = ChatCompletionRequest {
+            messages: messages.to_vec(),
+            model: self.model.clone(),
+            temperature: Some(6.7),
+            tools: None,
+            response_format: Some(ResponseFormat {
+                kind: "json_schema".to_string(),
+                json_schema: serde_json::to_value(schema).map_err(Error::Deserialization)?,
+            }),
+        };
+        let mut reqbuilder = self
+            .client
+            .post(format!("{}/chat/completions", self.url))
+            .json(&req);
+        if let Some((key, token)) = &self.header_kv {
+            reqbuilder = reqbuilder.bearer_auth(token).header(key, token);
+        }
+        let res_str = reqbuilder
+            .send()
+            .await
+            .map_err(Error::Request)?
+            .text()
+            .await
+            .map_err(Error::Request)?;
+        serde_json::from_str(&res_str).map_err(Error::Deserialization)
     }
 
     /// Continue the conversation with a given set of tools.
@@ -125,6 +183,7 @@ impl OpenAIClient {
             },
             messages: messages.to_vec(),
             temperature: Some(0.67),
+            response_format: None,
         };
         let mut reqbuilder = self
             .client
@@ -162,10 +221,10 @@ impl OpenAIClient {
             let completion: ChatCompletionResponse = self.get_completion(&prompts, &tools).await?;
             let response = completion.first().ok_or(Error::Response)?;
 
-            if let Some(assistant_message) = &response.content {
-                if !assistant_message.is_empty() {
-                    prompts.push(ChatCompletionMessageParam::new_assistant(assistant_message));
-                }
+            if let Some(assistant_message) = &response.content
+                && !assistant_message.is_empty()
+            {
+                prompts.push(ChatCompletionMessageParam::new_assistant(assistant_message));
             }
 
             if response.has_tools() {
@@ -187,6 +246,14 @@ pub struct ChatCompletionRequest {
     pub model: String,
     pub temperature: Option<f32>,
     pub tools: Option<Vec<serde_json::Value>>,
+    pub response_format: Option<ResponseFormat>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ResponseFormat {
+    #[serde(rename = "type")]
+    kind: String,
+    json_schema: serde_json::Value,
 }
 
 impl ChatCompletionRequest {
@@ -196,12 +263,14 @@ impl ChatCompletionRequest {
         model: String,
         temperature: Option<f32>,
         tools: Option<Vec<serde_json::Value>>,
+        response_format: Option<ResponseFormat>,
     ) -> Self {
         Self {
             messages,
             model,
             temperature,
             tools,
+            response_format,
         }
     }
 }
