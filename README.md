@@ -14,6 +14,13 @@ Run the following command to add this crate as a Git dependency:
 cargo add --git https://github.com/AfkaraLP/openai-client.git
 ```
 
+## Features
+
+This crate supports the following feature flags:
+
+- `tokio_runtime` (enabled by default): Uses the Tokio runtime for asynchronous operations.
+- `runtime_agnostic`: Uses futures-timer for runtime-agnostic asynchronous operations. Disable the default features if you want to use this instead.
+
 ## Example: Quick Agent Loop
 
 Here's how to run a simple agent loop with tool calling:
