@@ -75,25 +75,29 @@ pub struct OpenAIClient {
 
 impl OpenAIClient {
     #[must_use]
-    pub fn new(url: String, model: String, header_kv: Option<(String, String)>) -> Self {
+    pub fn new(
+        url: impl Into<String>,
+        model: impl Into<String>,
+        header_kv: Option<(String, String)>,
+    ) -> Self {
         let client = reqwest::Client::new();
         Self {
-            url,
+            url: url.into(),
             client,
-            model,
+            model: model.into(),
             header_kv,
         }
     }
 
     #[must_use]
-    pub fn set_key_pair(mut self, key: String, value: String) -> Self {
-        self.header_kv = Some((key, value));
+    pub fn set_key_pair(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.header_kv = Some((key.into(), value.into()));
         self
     }
 
     #[must_use]
-    pub fn set_bearer_auth(mut self, token: String) -> Self {
-        self.header_kv = Some(("Authorization".into(), token));
+    pub fn set_bearer_auth(mut self, token: impl Into<String>) -> Self {
+        self.header_kv = Some(("Authorization".into(), token.into()));
         self
     }
 
@@ -330,6 +334,22 @@ impl ChatCompletionMessageParam {
     pub fn new_system<S: Into<String>>(content: S) -> Self {
         Self::new(content, AIChatRole::System)
     }
+}
+
+/// Utility method to generate a quick start of LLM turn.
+pub fn new_system_user_turn(
+    system_prompt: impl Into<String>,
+    user_prompt: impl Into<String>,
+) -> Vec<ChatCompletionMessageParam> {
+    vec![
+        ChatCompletionMessageParam::new_system(system_prompt),
+        ChatCompletionMessageParam::new_user(user_prompt),
+    ]
+}
+
+/// Utility method to generate a quick user completion message parameter without developing carpal tunnel.
+pub fn user_message(content: impl Into<String>) -> ChatCompletionMessageParam {
+    ChatCompletionMessageParam::new_user(content)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
