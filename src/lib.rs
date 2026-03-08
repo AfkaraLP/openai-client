@@ -134,7 +134,11 @@ impl OpenAIClient {
             tools: None,
             response_format: Some(ResponseFormat {
                 kind: "json_schema".to_string(),
-                json_schema: serde_json::to_value(schema).map_err(Error::Deserialization)?,
+                json_schema: JsonSchemaConfig {
+                    name: std::any::type_name::<T>().rsplit("::").next().unwrap_or("response").to_string(),
+                    schema: serde_json::to_value(schema).map_err(Error::Deserialization)?,
+                    strict: true,
+                },
             }),
         };
         let mut reqbuilder = self
@@ -253,7 +257,14 @@ pub struct ChatCompletionRequest {
 pub struct ResponseFormat {
     #[serde(rename = "type")]
     kind: String,
-    json_schema: serde_json::Value,
+    json_schema: JsonSchemaConfig,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JsonSchemaConfig {
+    name: String,
+    schema: serde_json::Value,
+    strict: bool,
 }
 
 impl ChatCompletionRequest {
