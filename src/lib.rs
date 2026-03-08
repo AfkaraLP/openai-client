@@ -135,7 +135,11 @@ impl OpenAIClient {
             response_format: Some(ResponseFormat {
                 kind: "json_schema".to_string(),
                 json_schema: JsonSchemaConfig {
-                    name: std::any::type_name::<T>().rsplit("::").next().unwrap_or("response").to_string(),
+                    name: std::any::type_name::<T>()
+                        .rsplit("::")
+                        .next()
+                        .unwrap_or("response")
+                        .to_string(),
                     schema: serde_json::to_value(schema).map_err(Error::Deserialization)?,
                     strict: true,
                 },
@@ -155,7 +159,13 @@ impl OpenAIClient {
             .text()
             .await
             .map_err(Error::Request)?;
-        serde_json::from_str(&res_str).map_err(Error::Deserialization)
+        let response: ChatCompletionResponse =
+            serde_json::from_str(&res_str).map_err(Error::Deserialization)?;
+        let content = response
+            .first()
+            .and_then(|v| v.content.as_deref())
+            .ok_or(Error::Response)?;
+        serde_json::from_str(content).map_err(Error::Deserialization)
     }
 
     /// Continue the conversation with a given set of tools.
