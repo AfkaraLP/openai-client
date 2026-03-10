@@ -264,6 +264,7 @@ pub struct ChatCompletionRequest {
     pub model: String,
     pub temperature: Option<f32>,
     pub tools: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
 }
 
