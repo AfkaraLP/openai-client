@@ -9,8 +9,8 @@
 //!
 //! pub fn main() {
 //!     let client = OpenAIClient::new(
-//!         "http://localhost:1234/v1".into(),
-//!         "Qwen3/Qwen3-0.8B".into(),
+//!         "http://localhost:1234/v1",
+//!         "Qwen3/Qwen3-0.8B",
 //!         None,
 //!     );
 //!     client.get_completion(&[ChatCompletionMessageParam::new_system("hi")], &ToolMap::default());
@@ -115,8 +115,8 @@ impl OpenAIClient {
     /// }
     ///
     /// let client = OpenAIClient::new(
-    ///     "http://localhost:1234/v1".into(),
-    ///     "Qwen3/Qwen3-0.8B".into(),
+    ///     "http://localhost:1234/v1",
+    ///     "Qwen3/Qwen3-0.8B",
     ///     None,
     /// );
     ///
@@ -230,7 +230,7 @@ impl OpenAIClient {
         &self,
         system_prompt: impl Into<String>,
         prompt: impl Into<String>,
-        tools: ToolMap<'_>,
+        tools: &ToolMap<'_>,
     ) -> Result<String> {
         let system_prompt = ChatCompletionMessageParam::new_system(system_prompt.into());
         let user_prompt = ChatCompletionMessageParam::new_user(prompt.into());

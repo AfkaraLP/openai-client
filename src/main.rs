@@ -34,7 +34,7 @@ async fn main() {
         .run_agent(
             "You are a weather forecaster",
             "please tell me the weather in New Jersey",
-            ToolMap::new().register_tool(WeatherTool),
+            &ToolMap::new().register_tool(WeatherTool),
         )
         .await
         .unwrap();
