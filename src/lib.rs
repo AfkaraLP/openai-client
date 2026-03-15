@@ -236,7 +236,7 @@ impl OpenAIClient {
         let user_prompt = ChatCompletionMessageParam::new_user(prompt.into());
         let mut prompts = vec![system_prompt, user_prompt];
         loop {
-            let completion: ChatCompletionResponse = self.get_completion(&prompts, &tools).await?;
+            let completion: ChatCompletionResponse = self.get_completion(&prompts, tools).await?;
             let response = completion.first().ok_or(Error::Response)?;
 
             if let Some(assistant_message) = &response.content
@@ -246,7 +246,7 @@ impl OpenAIClient {
             }
 
             if response.has_tools() {
-                let tool_response = response.call_tools(&tools).await;
+                let tool_response = response.call_tools(tools).await;
                 prompts.push(ChatCompletionMessageParam::new_tool(tool_response));
             } else {
                 break Ok(response
@@ -533,7 +533,10 @@ pub trait ToolCallFn {
     #[must_use]
     fn get_description(&self) -> &'static str;
 
-    fn invoke(&self, args: &serde_json::Value) -> Pin<Box<dyn Future<Output = String> + Send>>;
+    fn invoke<'a>(
+        &'a self,
+        args: &serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = String> + Send + 'a>>;
 
     #[must_use]
     fn to_json_value(&self) -> serde_json::Value {
