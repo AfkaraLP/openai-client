@@ -24,7 +24,10 @@ pub mod prelude;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
-    collections::{HashMap, hash_map::Values},
+    collections::{
+        HashMap,
+        hash_map::{Iter, Values},
+    },
     pin::Pin,
 };
 
@@ -50,6 +53,11 @@ impl<'a> ToolMap<'a> {
     #[must_use]
     pub fn values(&self) -> Values<'_, &str, BoxedTool<'_>> {
         self.0.values()
+    }
+
+    #[must_use]
+    pub fn iter(&self) -> Iter<'_, &str, BoxedTool<'_>> {
+        self.0.iter()
     }
 
     #[must_use]
