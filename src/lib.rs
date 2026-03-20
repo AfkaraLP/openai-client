@@ -24,10 +24,7 @@ pub mod prelude;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
-    collections::{
-        HashMap,
-        hash_map::{Iter, Values},
-    },
+    collections::{HashMap, hash_map::Values},
     pin::Pin,
 };
 
@@ -53,11 +50,6 @@ impl<'a> ToolMap<'a> {
     #[must_use]
     pub fn values(&self) -> Values<'_, &str, BoxedTool<'_>> {
         self.0.values()
-    }
-
-    #[must_use]
-    pub fn iter(&self) -> Iter<'_, &str, BoxedTool<'_>> {
-        self.0.iter()
     }
 
     #[must_use]
@@ -254,8 +246,10 @@ impl OpenAIClient {
             }
 
             if response.has_tools() {
-                let tool_response = response.call_tools(tools).await;
-                prompts.push(ChatCompletionMessageParam::new_tool(tool_response));
+                let tool_responses = response.call_tools(tools).await;
+                for tool_response in tool_responses {
+                    prompts.push(tool_response);
+                }
             } else {
                 break Ok(response
                     .content
@@ -420,14 +414,13 @@ impl ChatCompletionResponseMessage {
     }
 
     #[must_use]
-    pub async fn call_tools(&self, tools: &ToolMap<'_>) -> String {
-        use std::fmt::Write;
-        let mut response = String::new();
+    pub async fn call_tools(&self, tools: &ToolMap<'_>) -> Vec<ChatCompletionMessageParam> {
+        let mut responses = Vec::new();
         for requested_tool in &self.tool_calls {
             let result = requested_tool.call(tools).await;
-            _ = writeln!(&mut response, "{result}");
+            responses.push(ChatCompletionMessageParam::new_tool(result));
         }
-        response
+        responses
     }
 }
 
