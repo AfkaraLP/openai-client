@@ -536,7 +536,7 @@ pub trait ToolCallFn {
 
     fn invoke<'a>(
         &'a self,
-        args: &serde_json::Value,
+        args: &'a serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = String> + Send + 'a>>;
 
     #[must_use]
