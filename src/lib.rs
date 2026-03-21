@@ -612,21 +612,36 @@ impl ToolCallArgDescriptor {
     }
 
     #[must_use]
-    pub fn required(mut self) -> Self {
-        self.required = true;
-        self
+    pub fn string(name: &'static str, description: &'static str) -> Self {
+        Self::required(name, ToolCallArgType::String, description)
     }
 
     #[must_use]
-    pub fn with_description(mut self, description: &'static str) -> Self {
-        self.description = description;
-        self
+    pub fn number(name: &'static str, description: &'static str) -> Self {
+        Self::required(name, ToolCallArgType::Number, description)
     }
 
     #[must_use]
-    pub fn with_name(mut self, name: &'static str) -> Self {
-        self.name = name;
-        self
+    pub fn bool(name: &'static str, description: &'static str) -> Self {
+        Self::required(name, ToolCallArgType::Bool, description)
+    }
+
+    #[must_use]
+    pub fn required(
+        name: &'static str,
+        argtype: ToolCallArgType,
+        description: &'static str,
+    ) -> Self {
+        Self::new(true, name, argtype, description)
+    }
+
+    #[must_use]
+    pub fn optional(
+        name: &'static str,
+        argtype: ToolCallArgType,
+        description: &'static str,
+    ) -> Self {
+        Self::new(false, name, argtype, description)
     }
 
     #[must_use]
