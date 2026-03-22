@@ -239,22 +239,39 @@ impl OpenAIClient {
             let completion: ChatCompletionResponse = self.get_completion(&prompts, tools).await?;
             let response = completion.first().ok_or(Error::Response)?;
 
-            if let Some(assistant_message) = &response.content
-                && !assistant_message.is_empty()
-            {
-                prompts.push(ChatCompletionMessageParam::new_assistant(assistant_message));
-            }
-
             if response.has_tools() {
+                prompts.push(ChatCompletionMessageParam::new_assistant_with_tools(
+                    response.content.as_deref().unwrap_or(""),
+                    Some(
+                        response
+                            .tool_calls
+                            .iter()
+                            .map(|tc| ToolCall {
+                                id: tc.id.clone(),
+                                call_type: tc.ftype.clone(),
+                                function: ToolCallFunction {
+                                    name: tc.function.name.clone(),
+                                    arguments: tc.function.arguments.clone(),
+                                },
+                            })
+                            .collect(),
+                    ),
+                ));
+
                 let tool_responses = response.call_tools(tools).await;
                 for tool_response in tool_responses {
                     prompts.push(tool_response);
                 }
             } else {
+                if let Some(assistant_message) = &response.content
+                    && !assistant_message.is_empty()
+                {
+                    prompts.push(ChatCompletionMessageParam::new_assistant(assistant_message));
+                }
                 break Ok(response
                     .content
                     .clone()
-                    .unwrap_or(String::from("Agent did not respond on last turn.")));
+                    .unwrap_or_else(|| String::from("Agent did not respond on last turn.")));
             }
         }
     }
@@ -286,7 +303,7 @@ pub struct JsonSchemaConfig {
 
 impl ChatCompletionRequest {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         messages: Vec<ChatCompletionMessageParam>,
         model: String,
         temperature: Option<f32>,
@@ -307,6 +324,10 @@ impl ChatCompletionRequest {
 pub struct ChatCompletionMessageParam {
     pub content: String,
     pub role: AIChatRole,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 impl ChatCompletionMessageParam {
@@ -315,6 +336,8 @@ impl ChatCompletionMessageParam {
         Self {
             content: content.into(),
             role,
+            tool_calls: None,
+            tool_call_id: None,
         }
     }
 
@@ -329,13 +352,42 @@ impl ChatCompletionMessageParam {
     }
 
     #[must_use]
-    pub fn new_tool<S: Into<String>>(content: S) -> Self {
-        Self::new(content, AIChatRole::Tool)
+    pub fn new_assistant_with_tools<S: Into<String>>(
+        content: S,
+        tool_calls: Option<Vec<ToolCall>>,
+    ) -> Self {
+        Self {
+            content: content.into(),
+            role: AIChatRole::Assistant,
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+
+    #[must_use]
+    pub fn new_tool<S: Into<String>>(content: S, tool_call_id: &str) -> Self {
+        Self {
+            content: content.into(),
+            role: AIChatRole::Tool,
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.to_string()),
+        }
     }
 
     #[must_use]
     pub fn new_system<S: Into<String>>(content: S) -> Self {
         Self::new(content, AIChatRole::System)
+    }
+}
+
+impl Default for ChatCompletionMessageParam {
+    fn default() -> Self {
+        Self {
+            content: String::new(),
+            role: AIChatRole::User,
+            tool_calls: None,
+            tool_call_id: None,
+        }
     }
 }
 
@@ -418,7 +470,10 @@ impl ChatCompletionResponseMessage {
         let mut responses = Vec::new();
         for requested_tool in &self.tool_calls {
             let result = requested_tool.call(tools).await;
-            responses.push(ChatCompletionMessageParam::new_tool(result));
+            responses.push(ChatCompletionMessageParam::new_tool(
+                result,
+                &requested_tool.id,
+            ));
         }
         responses
     }
@@ -426,6 +481,7 @@ impl ChatCompletionResponseMessage {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolInvocation {
+    pub id: String,
     #[serde(rename = "type")]
     pub ftype: String,
     pub function: ToolInvocationFunction,
@@ -456,6 +512,20 @@ impl ToolInvocation {
 pub struct ToolInvocationFunction {
     pub arguments: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub call_type: String,
+    pub function: ToolCallFunction,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolCallFunction {
+    pub name: String,
+    pub arguments: String,
 }
 
 impl std::fmt::Display for ChatCompletionMessageParam {
