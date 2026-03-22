@@ -32,8 +32,8 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Request(reqwest::Error),
     Deserialization(serde_json::Error),
+    Request(reqwest::Error),
     Response,
 }
 
@@ -43,13 +43,13 @@ pub struct ToolMap<'a>(HashMap<&'static str, BoxedTool<'a>>);
 
 impl<'a> ToolMap<'a> {
     #[must_use]
-    pub fn new() -> Self {
-        Self(HashMap::new())
+    pub fn get(&self, key: &str) -> Option<&BoxedTool<'_>> {
+        self.0.get(key)
     }
 
     #[must_use]
-    pub fn values(&self) -> Values<'_, &str, BoxedTool<'_>> {
-        self.0.values()
+    pub fn new() -> Self {
+        Self(HashMap::new())
     }
 
     #[must_use]
@@ -60,45 +60,67 @@ impl<'a> ToolMap<'a> {
     }
 
     #[must_use]
-    pub fn get(&self, key: &str) -> Option<&BoxedTool<'_>> {
-        self.0.get(key)
+    pub fn values(&self) -> Values<'_, &str, BoxedTool<'_>> {
+        self.0.values()
     }
 }
 
 /// Client for interacting with an openai compatible API.
 pub struct OpenAIClient {
-    pub url: String,
     pub client: reqwest::Client,
-    pub model: String,
     pub header_kv: Option<(String, String)>,
+    pub model: String,
+    pub url: String,
 }
 
 impl OpenAIClient {
-    #[must_use]
-    pub fn new(
-        url: impl Into<String>,
-        model: impl Into<String>,
-        header_kv: Option<(String, String)>,
-    ) -> Self {
-        let client = reqwest::Client::new();
-        Self {
-            url: url.into(),
-            client,
-            model: model.into(),
-            header_kv,
+    /// Continue the conversation with a given set of tools.
+    ///
+    /// # Errors
+    ///
+    /// ## The API has some error
+    ///
+    /// this can include:
+    /// - `Rate Limit` / `Unauthorized` (403)
+    /// - Server Errors (idk message openai in that case or sumn)
+    ///
+    /// ## Deserialization
+    ///
+    /// if the API response is not in the standard openai format then this will also fail.
+    pub async fn get_completion<'a>(
+        &'a self,
+        messages: &[ChatCompletionMessageParam],
+        tools: &ToolMap<'a>,
+    ) -> Result<ChatCompletionResponse> {
+        let req_tools: Vec<serde_json::Value> =
+            tools.values().map(|tool| tool.to_json_value()).collect();
+        let request = ChatCompletionRequest {
+            model: self.model.clone(),
+            tools: if req_tools.is_empty() {
+                None
+            } else {
+                Some(req_tools)
+            },
+            messages: messages.to_vec(),
+            temperature: Some(0.67),
+            parallel_tool_calls: None,
+            response_format: None,
+        };
+        let mut reqbuilder = self
+            .client
+            .post(format!("{}/chat/completions", self.url))
+            .json(&request);
+        if let Some((key, token)) = &self.header_kv {
+            reqbuilder = reqbuilder.bearer_auth(token).header(key, token);
         }
-    }
-
-    #[must_use]
-    pub fn set_key_pair(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.header_kv = Some((key.into(), value.into()));
-        self
-    }
-
-    #[must_use]
-    pub fn set_bearer_auth(mut self, token: impl Into<String>) -> Self {
-        self.header_kv = Some(("Authorization".into(), token.into()));
-        self
+        let res_str = reqbuilder
+            .send()
+            .await
+            .map_err(Error::Request)?
+            .text()
+            .await
+            .map_err(Error::Request)?;
+        serde_json::from_str(&res_str).map_err(Error::Deserialization)
     }
 
     /// Get a response that fits a certain schema.
@@ -136,6 +158,7 @@ impl OpenAIClient {
             model: self.model.clone(),
             temperature: Some(0.67),
             tools: None,
+            parallel_tool_calls: None,
             response_format: Some(ResponseFormat {
                 kind: "json_schema".to_string(),
                 json_schema: JsonSchemaConfig {
@@ -172,52 +195,19 @@ impl OpenAIClient {
         serde_json::from_str(content).map_err(Error::Deserialization)
     }
 
-    /// Continue the conversation with a given set of tools.
-    ///
-    /// # Errors
-    ///
-    /// ## The API has some error
-    ///
-    /// this can include:
-    /// - `Rate Limit` / `Unauthorized` (403)
-    /// - Server Errors (idk message openai in that case or sumn)
-    ///
-    /// ## Deserialization
-    ///
-    /// if the API response is not in the standard openai format then this will also fail.
-    pub async fn get_completion<'a>(
-        &'a self,
-        messages: &[ChatCompletionMessageParam],
-        tools: &ToolMap<'a>,
-    ) -> Result<ChatCompletionResponse> {
-        let req_tools: Vec<serde_json::Value> =
-            tools.values().map(|tool| tool.to_json_value()).collect();
-        let request = ChatCompletionRequest {
-            model: self.model.clone(),
-            tools: if req_tools.is_empty() {
-                None
-            } else {
-                Some(req_tools)
-            },
-            messages: messages.to_vec(),
-            temperature: Some(0.67),
-            response_format: None,
-        };
-        let mut reqbuilder = self
-            .client
-            .post(format!("{}/chat/completions", self.url))
-            .json(&request);
-        if let Some((key, token)) = &self.header_kv {
-            reqbuilder = reqbuilder.bearer_auth(token).header(key, token);
+    #[must_use]
+    pub fn new(
+        url: impl Into<String>,
+        model: impl Into<String>,
+        header_kv: Option<(String, String)>,
+    ) -> Self {
+        let client = reqwest::Client::new();
+        Self {
+            url: url.into(),
+            client,
+            model: model.into(),
+            header_kv,
         }
-        let res_str = reqbuilder
-            .send()
-            .await
-            .map_err(Error::Request)?
-            .text()
-            .await
-            .map_err(Error::Request)?;
-        serde_json::from_str(&res_str).map_err(Error::Deserialization)
     }
 
     /// Run the LLM in a loop until it stops calling tools and just responds.
@@ -241,7 +231,7 @@ impl OpenAIClient {
 
             if response.has_tools() {
                 prompts.push(ChatCompletionMessageParam::new_assistant_with_tools(
-                    response.content.as_deref().unwrap_or(""),
+                    response.content.clone(),
                     Some(
                         response
                             .tool_calls
@@ -275,23 +265,37 @@ impl OpenAIClient {
             }
         }
     }
+
+    #[must_use]
+    pub fn set_bearer_auth(mut self, token: impl Into<String>) -> Self {
+        self.header_kv = Some(("Authorization".into(), token.into()));
+        self
+    }
+
+    #[must_use]
+    pub fn set_key_pair(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.header_kv = Some((key.into(), value.into()));
+        self
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChatCompletionRequest {
     pub messages: Vec<ChatCompletionMessageParam>,
     pub model: String,
-    pub temperature: Option<f32>,
-    pub tools: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel_tool_calls: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
+    pub temperature: Option<f32>,
+    pub tools: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResponseFormat {
+    json_schema: JsonSchemaConfig,
     #[serde(rename = "type")]
     kind: String,
-    json_schema: JsonSchemaConfig,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -308,6 +312,7 @@ impl ChatCompletionRequest {
         model: String,
         temperature: Option<f32>,
         tools: Option<Vec<serde_json::Value>>,
+        parallel_tool_calls: Option<bool>,
         response_format: Option<ResponseFormat>,
     ) -> Self {
         Self {
@@ -315,6 +320,7 @@ impl ChatCompletionRequest {
             model,
             temperature,
             tools,
+            parallel_tool_calls,
             response_format,
         }
     }
@@ -322,28 +328,23 @@ impl ChatCompletionRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChatCompletionMessageParam {
-    pub content: String,
+    pub content: Option<String>,
     pub role: AIChatRole,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 impl ChatCompletionMessageParam {
     #[must_use]
     pub fn new<S: Into<String>>(content: S, role: AIChatRole) -> Self {
         Self {
-            content: content.into(),
+            content: Some(content.into()),
             role,
             tool_calls: None,
             tool_call_id: None,
         }
-    }
-
-    #[must_use]
-    pub fn new_user<S: Into<String>>(content: S) -> Self {
-        Self::new(content, AIChatRole::User)
     }
 
     #[must_use]
@@ -352,12 +353,12 @@ impl ChatCompletionMessageParam {
     }
 
     #[must_use]
-    pub fn new_assistant_with_tools<S: Into<String>>(
-        content: S,
+    pub const fn new_assistant_with_tools(
+        content: Option<String>,
         tool_calls: Option<Vec<ToolCall>>,
     ) -> Self {
         Self {
-            content: content.into(),
+            content,
             role: AIChatRole::Assistant,
             tool_calls,
             tool_call_id: None,
@@ -365,9 +366,14 @@ impl ChatCompletionMessageParam {
     }
 
     #[must_use]
+    pub fn new_system<S: Into<String>>(content: S) -> Self {
+        Self::new(content, AIChatRole::System)
+    }
+
+    #[must_use]
     pub fn new_tool<S: Into<String>>(content: S, tool_call_id: &str) -> Self {
         Self {
-            content: content.into(),
+            content: Some(content.into()),
             role: AIChatRole::Tool,
             tool_calls: None,
             tool_call_id: Some(tool_call_id.to_string()),
@@ -375,15 +381,15 @@ impl ChatCompletionMessageParam {
     }
 
     #[must_use]
-    pub fn new_system<S: Into<String>>(content: S) -> Self {
-        Self::new(content, AIChatRole::System)
+    pub fn new_user<S: Into<String>>(content: S) -> Self {
+        Self::new(content, AIChatRole::User)
     }
 }
 
 impl Default for ChatCompletionMessageParam {
     fn default() -> Self {
         Self {
-            content: String::new(),
+            content: None,
             role: AIChatRole::User,
             tool_calls: None,
             tool_call_id: None,
@@ -409,15 +415,15 @@ pub fn user_message(content: impl Into<String>) -> ChatCompletionMessageParam {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AIChatRole {
-    #[serde(rename = "user")]
-    User,
-    #[serde(rename = "tool")]
-    Tool,
-    #[serde(rename = "system")]
-    System,
     #[serde(rename = "assistant")]
     Assistant,
     Custom(String),
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "tool")]
+    Tool,
+    #[serde(rename = "user")]
+    User,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -461,7 +467,7 @@ pub struct ChatCompletionResponseMessage {
 impl ChatCompletionResponseMessage {
     #[must_use]
     #[inline]
-    pub fn has_tools(&self) -> bool {
+    pub const fn has_tools(&self) -> bool {
         !self.tool_calls.is_empty()
     }
 
@@ -481,10 +487,10 @@ impl ChatCompletionResponseMessage {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolInvocation {
-    pub id: String,
     #[serde(rename = "type")]
     pub ftype: String,
     pub function: ToolInvocationFunction,
+    pub id: String,
 }
 
 pub async fn sleep(duration: std::time::Duration) {
@@ -516,21 +522,26 @@ pub struct ToolInvocationFunction {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolCall {
-    pub id: String,
     #[serde(rename = "type")]
     pub call_type: String,
     pub function: ToolCallFunction,
+    pub id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolCallFunction {
-    pub name: String,
     pub arguments: String,
+    pub name: String,
 }
 
 impl std::fmt::Display for ChatCompletionMessageParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "[{:#?}: {}]", self.role, self.content)
+        writeln!(
+            f,
+            "[{:#?}: {}]",
+            self.role,
+            self.content.as_deref().unwrap_or("(null)")
+        )
     }
 }
 
@@ -600,9 +611,17 @@ impl<'a, T> IntoPinBox<'a> for T where T: Sized + Send + ToString + 'a {}
 ///
 pub trait ToolCallFn {
     #[must_use]
-    fn get_name(&self) -> &'static str;
+    fn get_args(&self) -> Vec<ToolCallArgDescriptor>;
     #[must_use]
     fn get_description(&self) -> &'static str;
+
+    #[must_use]
+    fn get_name(&self) -> &'static str;
+
+    #[must_use]
+    fn get_timeout_wait(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(3000)
+    }
 
     fn invoke<'a>(
         &'a self,
@@ -618,8 +637,19 @@ pub trait ToolCallFn {
             .iter()
             .filter_map(|arg| if arg.required { Some(arg.name) } else { None })
             .collect::<Vec<&str>>();
-        let props: HashMap<String, serde_json::Value> =
-            args.iter().map(ToolCallArgDescriptor::serialize).collect();
+        let props: HashMap<String, serde_json::Value> = args
+            .iter()
+            .map(|v| {
+                let this = &v;
+                (
+                    this.name.to_owned(),
+                    serde_json::json!({
+                        "type": this.argtype,
+                        "description": this.description
+                    }),
+                );
+            })
+            .collect();
         let json = serde_json::json!(
             {
                 "type": "function",
@@ -636,38 +666,35 @@ pub trait ToolCallFn {
         );
         json
     }
-
-    #[must_use]
-    fn get_args(&self) -> Vec<ToolCallArgDescriptor>;
-
-    #[must_use]
-    fn get_timeout_wait(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(3000)
-    }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ToolCallArgDescriptor {
-    pub required: bool,
-    pub name: &'static str,
     pub argtype: ToolCallArgType,
     pub description: &'static str,
+    pub name: &'static str,
+    pub required: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum ToolCallArgType {
+    #[serde(rename = "bool")]
+    Bool,
+    #[serde(rename = "number")]
+    Number,
     #[default]
     #[serde(rename = "string")]
     String,
-    #[serde(rename = "number")]
-    Number,
-    #[serde(rename = "bool")]
-    Bool,
 }
 
 impl ToolCallArgDescriptor {
     #[must_use]
-    pub fn new(
+    pub const fn bool(name: &'static str, description: &'static str) -> Self {
+        Self::required(name, ToolCallArgType::Bool, description)
+    }
+
+    #[must_use]
+    pub const fn new(
         required: bool,
         name: &'static str,
         argtype: ToolCallArgType,
@@ -682,31 +709,12 @@ impl ToolCallArgDescriptor {
     }
 
     #[must_use]
-    pub fn string(name: &'static str, description: &'static str) -> Self {
-        Self::required(name, ToolCallArgType::String, description)
-    }
-
-    #[must_use]
-    pub fn number(name: &'static str, description: &'static str) -> Self {
+    pub const fn number(name: &'static str, description: &'static str) -> Self {
         Self::required(name, ToolCallArgType::Number, description)
     }
 
     #[must_use]
-    pub fn bool(name: &'static str, description: &'static str) -> Self {
-        Self::required(name, ToolCallArgType::Bool, description)
-    }
-
-    #[must_use]
-    pub fn required(
-        name: &'static str,
-        argtype: ToolCallArgType,
-        description: &'static str,
-    ) -> Self {
-        Self::new(true, name, argtype, description)
-    }
-
-    #[must_use]
-    pub fn optional(
+    pub const fn optional(
         name: &'static str,
         argtype: ToolCallArgType,
         description: &'static str,
@@ -715,13 +723,16 @@ impl ToolCallArgDescriptor {
     }
 
     #[must_use]
-    fn serialize(&self) -> (String, serde_json::Value) {
-        (
-            self.name.to_string(),
-            serde_json::json!({
-                "type": self.argtype,
-                "description": self.description
-            }),
-        )
+    pub const fn required(
+        name: &'static str,
+        argtype: ToolCallArgType,
+        description: &'static str,
+    ) -> Self {
+        Self::new(true, name, argtype, description)
+    }
+
+    #[must_use]
+    pub const fn string(name: &'static str, description: &'static str) -> Self {
+        Self::required(name, ToolCallArgType::String, description)
     }
 }

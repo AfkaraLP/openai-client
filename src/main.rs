@@ -47,7 +47,7 @@ async fn main() {
         )
         .await
         .unwrap();
-    println!("{}", haiku.first().unwrap().content.as_ref().unwrap());
+    println!("{}", haiku.first().unwrap().0.as_ref().unwrap());
 }
 
 #[derive(JsonSchema, Deserialize, Serialize)]
