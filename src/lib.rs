@@ -134,7 +134,7 @@ impl OpenAIClient {
         let req = ChatCompletionRequest {
             messages: messages.to_vec(),
             model: self.model.clone(),
-            temperature: Some(6.7),
+            temperature: Some(0.67),
             tools: None,
             response_format: Some(ResponseFormat {
                 kind: "json_schema".to_string(),
