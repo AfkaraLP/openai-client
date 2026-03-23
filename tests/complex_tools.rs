@@ -1,12 +1,12 @@
-use std::{pin::Pin, sync::Arc};
+use core::pin::Pin;
+use std::sync::Arc;
 
-use openai_client::{
-    IntoPinBox, OpenAIClient, ToolCallArgDescriptor, ToolCallArgType, ToolCallFn, ToolMap, prelude,
-};
+use openai_client::{IntoPinBox, OpenAIClient, ToolCallArgDescriptor, ToolCallFn, ToolMap};
 
 struct State;
 struct Client;
 
+#[expect(unused, reason = "Test")]
 pub struct SpawnSubAgent<'a> {
     state: Arc<State>,
     bot: Arc<Client>,
@@ -63,10 +63,8 @@ impl<'a> ToolCallFn for SpawnSubAgent<'a> {
     }
 
     fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
-        vec![ToolCallArgDescriptor::new(
-            true,
+        vec![ToolCallArgDescriptor::string(
             "task",
-            ToolCallArgType::String,
             "the task that the agent should fulfill before stopping.",
         )]
     }
