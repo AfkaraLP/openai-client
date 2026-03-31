@@ -226,8 +226,12 @@ impl OpenAIClient {
         header_kv: Option<(String, String)>,
     ) -> Self {
         let client = reqwest::Client::new();
+        let url_string = url.into();
+        let sanitized_url = url_string
+            .strip_suffix('/')
+            .map_or_else(|| url_string.clone(), ToOwned::to_owned);
         Self {
-            url: url.into(),
+            url: sanitized_url,
             client,
             model: model.into(),
             header_kv,
@@ -697,7 +701,7 @@ pub trait ToolCallFn {
     #[inline]
     #[must_use]
     fn get_timeout_wait(&self) -> Duration {
-        Duration::from_millis(3000)
+        Duration::from_secs(3)
     }
 
     fn invoke<'invocation>(
