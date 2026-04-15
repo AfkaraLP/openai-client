@@ -84,6 +84,7 @@ impl<'tool> ToolMap<'tool> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum OpenAIAuth {
     BearerToken(String),
     ApiKey { key: String, value: String },
