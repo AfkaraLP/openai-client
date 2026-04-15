@@ -84,11 +84,16 @@ impl<'tool> ToolMap<'tool> {
     }
 }
 
+pub enum OpenAIAuth {
+    BearerToken(String),
+    ApiKey { key: String, value: String },
+}
+
 #[non_exhaustive]
 /// Client for interacting with an openai compatible API.
 pub struct OpenAIClient {
     pub client: reqwest::Client,
-    pub header_kv: Option<(String, String)>,
+    pub auth: Option<OpenAIAuth>,
     pub model: String,
     pub url: String,
     temperature: Option<f32>,
@@ -132,8 +137,11 @@ impl OpenAIClient {
             .client
             .post(format!("{}/chat/completions", self.url))
             .json(&request);
-        if let Some((key, token)) = &self.header_kv {
-            reqbuilder = reqbuilder.bearer_auth(token).header(key, token);
+        if let Some(auth) = &self.auth {
+            reqbuilder = match auth {
+                OpenAIAuth::BearerToken(token) => reqbuilder.bearer_auth(token),
+                OpenAIAuth::ApiKey { key, value } => reqbuilder.header(key, value),
+            }
         }
         let res_str = reqbuilder
             .send()
@@ -200,8 +208,11 @@ impl OpenAIClient {
             .client
             .post(format!("{}/chat/completions", self.url))
             .json(&req);
-        if let Some((key, token)) = &self.header_kv {
-            reqbuilder = reqbuilder.bearer_auth(token).header(key, token);
+        if let Some(auth) = &self.auth {
+            reqbuilder = match auth {
+                OpenAIAuth::BearerToken(token) => reqbuilder.bearer_auth(token),
+                OpenAIAuth::ApiKey { key, value } => reqbuilder.header(key, value),
+            }
         }
         let res_str = reqbuilder
             .send()
@@ -224,7 +235,7 @@ impl OpenAIClient {
     pub fn new<S1: Into<String>, S2: Into<String>>(
         url: S1,
         model: S2,
-        header_kv: Option<(String, String)>,
+        auth: Option<OpenAIAuth>,
     ) -> Self {
         let client = reqwest::Client::new();
         let url_string = url.into();
@@ -235,7 +246,7 @@ impl OpenAIClient {
             url: sanitized_url,
             client,
             model: model.into(),
-            header_kv,
+            auth,
             temperature: None,
         }
     }
@@ -300,13 +311,13 @@ impl OpenAIClient {
     #[inline]
     #[must_use]
     pub fn set_bearer_auth<S: Into<String>>(mut self, token: S) -> Self {
-        self.header_kv = Some(("Authorization".into(), token.into()));
+        self.auth = Some(OpenAIAuth::BearerToken(token.into()));
         self
     }
 
     #[inline]
     #[must_use]
-    pub fn set_temperature(mut self, temp: f32) -> Self {
+    pub const fn set_temperature(mut self, temp: f32) -> Self {
         self.temperature = Some(temp);
         self
     }
@@ -314,7 +325,10 @@ impl OpenAIClient {
     #[inline]
     #[must_use]
     pub fn set_key_pair<S1: Into<String>, S2: Into<String>>(mut self, key: S1, value: S2) -> Self {
-        self.header_kv = Some((key.into(), value.into()));
+        self.auth = Some(OpenAIAuth::ApiKey {
+            key: key.into(),
+            value: value.into(),
+        });
         self
     }
 }
