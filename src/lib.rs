@@ -527,6 +527,7 @@ pub struct ChatCompletionResponseMessage {
     pub content: Option<String>,
     pub reasoning: Option<String>,
     pub role: AIChatRole,
+    #[serde(default)]
     pub tool_calls: Vec<ToolInvocation>,
 }
 
