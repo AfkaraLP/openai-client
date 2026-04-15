@@ -91,6 +91,7 @@ pub struct OpenAIClient {
     pub header_kv: Option<(String, String)>,
     pub model: String,
     pub url: String,
+    temperature: Option<f32>,
 }
 
 impl OpenAIClient {
@@ -123,7 +124,7 @@ impl OpenAIClient {
                 Some(req_tools)
             },
             messages: messages.to_vec(),
-            temperature: Some(0.67),
+            temperature: self.temperature,
             parallel_tool_calls: None,
             response_format: None,
         };
@@ -179,7 +180,7 @@ impl OpenAIClient {
         let req = ChatCompletionRequest {
             messages: messages.to_vec(),
             model: &self.model,
-            temperature: Some(0.67),
+            temperature: self.temperature,
             tools: None,
             parallel_tool_calls: None,
             response_format: Some(ResponseFormat {
@@ -235,6 +236,7 @@ impl OpenAIClient {
             client,
             model: model.into(),
             header_kv,
+            temperature: None,
         }
     }
 
@@ -299,6 +301,13 @@ impl OpenAIClient {
     #[must_use]
     pub fn set_bearer_auth<S: Into<String>>(mut self, token: S) -> Self {
         self.header_kv = Some(("Authorization".into(), token.into()));
+        self
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn set_temperature(mut self, temp: f32) -> Self {
+        self.temperature = Some(temp);
         self
     }
 
