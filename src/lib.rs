@@ -254,20 +254,22 @@ impl OpenAIClient {
 
     /// Run the LLM in a loop until it stops calling tools and just responds.
     ///
+    /// Returns The agents last message, as well as the whole updated history of chat completions for further processing.
+    ///
     /// # Errors
     ///
     /// - There was no completion.
     /// - The completion did not have any messages.
     #[inline]
-    pub async fn run_agent<S1: Into<String>, S2: Into<String>>(
+    pub async fn run_agent(
         &self,
-        system_prompt: S1,
-        prompt: S2,
+        messages: Vec<ChatCompletionMessageParam>,
         tools: &ToolMap<'_>,
-    ) -> Result<String> {
-        let system_message = ChatCompletionMessageParam::new_system(system_prompt.into());
-        let user_prompt = ChatCompletionMessageParam::new_user(prompt.into());
-        let mut prompts = vec![system_message, user_prompt];
+    ) -> Result<(
+        ChatCompletionResponseMessage,
+        Vec<ChatCompletionMessageParam>,
+    )> {
+        let mut prompts = messages;
         loop {
             let completion: ChatCompletionResponse = self.get_completion(&prompts, tools).await?;
             let response = completion.first().ok_or(Error::Response)?;
@@ -301,10 +303,7 @@ impl OpenAIClient {
                 {
                     prompts.push(ChatCompletionMessageParam::new_assistant(assistant_message));
                 }
-                break Ok(response
-                    .content
-                    .clone()
-                    .unwrap_or_else(|| String::from("Agent did not respond on last turn.")));
+                break Ok((response.clone(), prompts));
             }
         }
     }

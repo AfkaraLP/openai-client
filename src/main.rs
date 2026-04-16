@@ -45,13 +45,15 @@ async fn main() {
 
     let weather = client
         .run_agent(
-            "You are a weather forecaster",
-            "please tell me the weather in New Jersey",
+            new_system_user_turn(
+                "You are a weather forecaster",
+                "please tell me the weather in New Jersey",
+            ),
             &ToolMap::new().register_tool(WeatherTool),
         )
         .await
         .unwrap();
-    println!("New Jersey Weather: {weather}");
+    println!("New Jersey Weather: {weather:#?}");
 
     let haiku = client
         .get_completion(

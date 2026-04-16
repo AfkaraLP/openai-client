@@ -1,7 +1,9 @@
 use core::pin::Pin;
 use std::sync::Arc;
 
-use openai_client::{IntoPinBox, OpenAIClient, ToolCallArgDescriptor, ToolCallFn, ToolMap};
+use openai_client::{
+    IntoPinBox, OpenAIClient, ToolCallArgDescriptor, ToolCallFn, ToolMap, new_system_user_turn,
+};
 
 struct State;
 struct Client;
@@ -55,9 +57,12 @@ impl<'a> ToolCallFn for SpawnSubAgent<'a> {
         let agent_loop = async move {
             let client = &OpenAIClient::new("test", "test", None);
             client
-                .run_agent("test_prompt", task, &tools)
+                .run_agent(new_system_user_turn("test_prompt", task), &tools)
                 .await
-                .unwrap_or(String::from("Subagent Run Failed"))
+                .unwrap()
+                .0
+                .content
+                .unwrap()
         };
         Box::pin(agent_loop)
     }
