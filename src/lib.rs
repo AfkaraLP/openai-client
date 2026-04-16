@@ -849,4 +849,17 @@ impl ToolCallArgDescriptor {
     pub const fn string(name: &'static str, description: &'static str) -> Self {
         Self::required(name, ToolCallArgType::String, description)
     }
+
+    #[inline]
+    #[must_use]
+    pub const fn set_optional(mut self) -> Self {
+        self.required = false;
+        self
+    }
+    #[inline]
+    #[must_use]
+    pub const fn set_required(mut self) -> Self {
+        self.required = true;
+        self
+    }
 }
