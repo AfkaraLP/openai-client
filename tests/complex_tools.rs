@@ -114,5 +114,7 @@ async fn test_subagent_flow() {
 
     // no-op, I am not willing to spend money or compute just on testing this, if anyone has a good idea on how to test this anyway shoot me a dm on discord or something
     let client = OpenAIClient::new("test", "test", None);
-    _ = client.run_agent("test", "test", &main_tool).await;
+    _ = client
+        .run_agent(new_system_user_turn("test", "test"), &main_tool)
+        .await;
 }
