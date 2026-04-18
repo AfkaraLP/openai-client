@@ -28,10 +28,10 @@ compile_error!("You can only choose a single runtime");
 
 pub mod prelude;
 
+use async_trait::async_trait;
 use core::{
     any::type_name,
     fmt::{self, Formatter},
-    pin::Pin,
     result,
     time::Duration,
 };
@@ -54,7 +54,7 @@ pub enum Error {
 pub type BoxedTool<'tools> = Box<dyn ToolCallFn + Send + Sync + 'tools>;
 #[non_exhaustive]
 #[derive(Default)]
-pub struct ToolMap<'tool>(HashMap<&'static str, BoxedTool<'tool>>);
+pub struct ToolMap<'tool>(HashMap<&'tool str, BoxedTool<'tool>>);
 
 impl<'tool> ToolMap<'tool> {
     #[inline]
@@ -649,23 +649,14 @@ impl fmt::Display for AIChatRole {
     }
 }
 
-pub trait IntoPinBox<'str>: Sized + Send + ToString + 'str {
-    /// Allow something to be returned as a `Pin<Box<dyn Future<Output = String>>>`.
-    #[inline]
-    fn into_pin_box(self) -> Pin<Box<dyn Future<Output = String> + Send + 'str>> {
-        Box::pin(async move { self.to_string() })
-    }
-}
-
-#[expect(clippy::missing_trait_methods, reason = "Readability")]
-impl<'str, T> IntoPinBox<'str> for T where T: Sized + Send + ToString + 'str {}
-
 /// Turn anything you want into a callable tool.
 ///
 /// # Usage
 ///
 /// ```rust
 /// use openai_client::prelude::*;
+/// use async_trait::async_trait;
+///
 /// pub struct MyTool {
 ///     some_context: String,
 /// }
@@ -678,6 +669,7 @@ impl<'str, T> IntoPinBox<'str> for T where T: Sized + Send + ToString + 'str {}
 ///         .unwrap()
 /// }
 ///
+/// #[async_trait]
 /// impl ToolCallFn for MyTool {
 ///     fn get_name(&self) -> &'static str {
 ///         "my_tool"
@@ -687,13 +679,13 @@ impl<'str, T> IntoPinBox<'str> for T where T: Sized + Send + ToString + 'str {}
 ///         "this tool does awesome things"
 ///     }
 ///
-///     fn invoke(&self, args: &serde_json::Value) -> std::pin::Pin<Box<dyn Future<Output = String> + Send>> {
+///     async fn invoke(&self, args: &serde_json::Value) -> String {
 ///         let Some(serde_json::Value::String(cool_arg)) = args.get("cool_arg") else {
-///             return "failed".into_pin_box();
+///             return "failed".to_string();
 ///         };
 ///         let context = self.some_context.clone();
 ///         let cool_arg = cool_arg.clone();
-///         Box::pin(async move { foo(cool_arg, context).await })
+///         foo(cool_arg, context).await
 ///     }
 ///
 ///     fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
@@ -713,6 +705,7 @@ impl<'str, T> IntoPinBox<'str> for T where T: Sized + Send + ToString + 'str {}
 /// });
 /// ```
 ///
+#[async_trait]
 pub trait ToolCallFn {
     #[must_use]
     fn get_args(&self) -> Vec<ToolCallArgDescriptor>;
@@ -728,10 +721,7 @@ pub trait ToolCallFn {
         Duration::from_secs(3)
     }
 
-    fn invoke<'invocation>(
-        &'invocation self,
-        args: &'invocation serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = String> + Send + 'invocation>>;
+    async fn invoke(&self, args: &serde_json::Value) -> String;
 
     #[inline]
     #[must_use]
@@ -772,6 +762,10 @@ pub trait ToolCallFn {
         );
         json
     }
+}
+
+pub trait ToolOutput: Sized {
+    fn stringify(self) -> String;
 }
 
 #[non_exhaustive]

@@ -1,8 +1,8 @@
-use core::pin::Pin;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use openai_client::{
-    IntoPinBox, OpenAIClient, ToolCallArgDescriptor, ToolCallFn, ToolMap, new_system_user_turn,
+    OpenAIClient, ToolCallArgDescriptor, ToolCallFn, ToolMap, new_system_user_turn,
 };
 
 struct State;
@@ -33,6 +33,7 @@ impl<'a> SpawnSubAgent<'a> {
 }
 
 // example code from my private project I stole
+#[async_trait]
 impl<'a> ToolCallFn for SpawnSubAgent<'a> {
     fn get_name(&self) -> &'static str {
         "spawn_sub_agent"
@@ -42,29 +43,23 @@ impl<'a> ToolCallFn for SpawnSubAgent<'a> {
         "spawn an AI that can control the bot and interact with the outside world"
     }
 
-    fn invoke<'b>(
-        &'b self,
-        args: &serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = String> + Send + 'b>> {
+    async fn invoke(&self, args: &serde_json::Value) -> String {
         let Some(serde_json::Value::String(task)) = args.get("task") else {
-            return "Please provide a task".into_pin_box();
+            return "Please provide a task".to_string();
         };
 
         let task = task.clone();
         let _state = self.state.clone();
         let _bot = self.bot.clone();
         let tools = self.subagent_tools.clone();
-        let agent_loop = async move {
-            let client = &OpenAIClient::new("test", "test", None);
-            client
-                .run_agent(new_system_user_turn("test_prompt", task), &tools)
-                .await
-                .unwrap()
-                .0
-                .content
-                .unwrap()
-        };
-        Box::pin(agent_loop)
+        let client = &OpenAIClient::new("test", "test", None);
+        client
+            .run_agent(new_system_user_turn("test_prompt", task), &tools)
+            .await
+            .unwrap()
+            .0
+            .content
+            .unwrap()
     }
 
     fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
@@ -81,6 +76,7 @@ impl<'a> ToolCallFn for SpawnSubAgent<'a> {
 
 struct SubAgentTool;
 
+#[async_trait]
 impl ToolCallFn for SubAgentTool {
     fn get_name(&self) -> &'static str {
         "thing"
@@ -90,11 +86,8 @@ impl ToolCallFn for SubAgentTool {
         "test"
     }
 
-    fn invoke<'a>(
-        &'a self,
-        _args: &serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = String> + Send + 'a>> {
-        "this is just a test".into_pin_box()
+    async fn invoke(&self, _args: &serde_json::Value) -> String {
+        "this is just a test".to_string()
     }
 
     fn get_args(&self) -> Vec<ToolCallArgDescriptor> {

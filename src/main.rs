@@ -6,8 +6,8 @@
 #![expect(clippy::pattern_type_mismatch, reason = "Idk how to do this")]
 #![expect(clippy::missing_trait_methods, reason = "Literally defeats the point")]
 #![expect(clippy::missing_docs_in_private_items, reason = "This is just testing")]
-use core::pin::Pin;
 
+use async_trait::async_trait;
 use openai_client::prelude::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -74,6 +74,7 @@ struct Cat {
 
 struct WeatherTool;
 
+#[async_trait]
 impl ToolCallFn for WeatherTool {
     fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
         vec![ToolCallArgDescriptor::string(
@@ -90,10 +91,10 @@ impl ToolCallFn for WeatherTool {
         "weather_tool"
     }
 
-    fn invoke(&self, args: &serde_json::Value) -> Pin<Box<dyn Future<Output = String> + Send>> {
+    async fn invoke(&self, args: &serde_json::Value) -> String {
         let Some(Value::String(location)) = args.get("location") else {
-            return "please provide a location".into_pin_box();
+            return "please provide a location".to_string();
         };
-        format!("The weather in {location} is partly cloudy with 22 degrees").into_pin_box()
+        format!("The weather in {location} is partly cloudy with 22 degrees")
     }
 }

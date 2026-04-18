@@ -27,10 +27,12 @@ Here's how to run a simple agent loop with tool calling:
 
 ```rust
 use openai_client::prelude::*;
+use async_trait::async_trait;
 
 #[derive(Clone)]
 struct EchoTool;
 
+#[async_trait]
 impl ToolCallFn for EchoTool {
     fn get_name(&self) -> &'static str {
         "echo"
@@ -40,12 +42,10 @@ impl ToolCallFn for EchoTool {
         "Echoes the input message"
     }
 
-    fn invoke(&self, args: &serde_json::Value) -> std::pin::Pin<Box<dyn std::future::Future<Output = String> + Send>> {
+    async fn invoke(&self, args: &serde_json::Value) -> String {
         let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("hello");
-        Box::pin(async move {
-            println!("The model said: {message}");
-            format!("Echoed: {message}");
-        })
+        println!("The model said: {message}");
+        format!("Echoed: {message}")
     }
 
     fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
@@ -69,8 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tools = ToolMap::new().register_tool(EchoTool);
 
     let response = client.run_agent(
-        "You are a helpful assistant with access to tools.",
-        "Echo 'Hello World'",
+        &new_system_user_turn(
+            "You are a helpful assistant with access to tools.",
+            "Echo 'Hello World'"
+        ),
         tools,
     ).await?;
 
