@@ -411,6 +411,14 @@ impl ChatCompletionMessageParam {
             tool_call_id: None,
         }
     }
+    #[inline]
+    #[must_use]
+    pub fn start_of_conversation<S: Into<String>, P: Into<String>>(
+        system_prompt: S,
+        prompt: P,
+    ) -> [Self; 2] {
+        [Self::new_system(system_prompt), Self::new_user(prompt)]
+    }
 
     #[inline]
     #[must_use]
