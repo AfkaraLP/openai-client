@@ -151,7 +151,22 @@ impl OpenAIClient {
             .text()
             .await
             .map_err(Error::Request)?;
-        serde_json::from_str(&res_str).map_err(Error::Deserialization)
+        let mut res: ChatCompletionResponse =
+            serde_json::from_str(&res_str).map_err(Error::Deserialization)?;
+        // Smaller models (atleast on LM-Studio) sometimes put the reasoning in
+        // the content instead (this fix is rather hacky but this library is too immature
+        // to care anyway).
+        for msg in &mut res.choices {
+            if let Some(content) = msg.message.content.take() {
+                if let Some((reasoning, actual)) = content.split_once("</think>") {
+                    msg.message.reasoning = Some(reasoning.to_string());
+                    msg.message.content = Some(actual.to_string());
+                } else {
+                    msg.message.content = Some(content);
+                }
+            }
+        }
+        Ok(res)
     }
 
     /// Get a response that fits a certain schema.
