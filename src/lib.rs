@@ -46,7 +46,7 @@ pub type Result<T> = result::Result<T, Error>;
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {
-    Deserialization(serde_json::Error),
+    Deserialization(serde_json::Error, String),
     Request(reqwest::Error),
     Response,
 }
@@ -152,7 +152,7 @@ impl OpenAIClient {
             .await
             .map_err(Error::Request)?;
         let mut res: ChatCompletionResponse =
-            serde_json::from_str(&res_str).map_err(Error::Deserialization)?;
+            serde_json::from_str(&res_str).map_err(|e| Error::Deserialization(e, res_str))?;
         // Smaller models (atleast on LM-Studio) sometimes put the reasoning in
         // the content instead (this fix is rather hacky but this library is too immature
         // to care anyway).
@@ -215,7 +215,8 @@ impl OpenAIClient {
                         .next()
                         .unwrap_or("response")
                         .to_owned(),
-                    schema: serde_json::to_value(schema).map_err(Error::Deserialization)?,
+                    schema: serde_json::to_value(schema)
+                        .map_err(|e| Error::Deserialization(e, String::from("Invalid Schema")))?,
                     strict: true,
                 },
             }),
@@ -238,12 +239,12 @@ impl OpenAIClient {
             .await
             .map_err(Error::Request)?;
         let response: ChatCompletionResponse =
-            serde_json::from_str(&res_str).map_err(Error::Deserialization)?;
+            serde_json::from_str(&res_str).map_err(|e| Error::Deserialization(e, res_str))?;
         let content = response
             .first()
             .and_then(|response_message| response_message.content.as_deref())
             .ok_or(Error::Response)?;
-        serde_json::from_str(content).map_err(Error::Deserialization)
+        serde_json::from_str(content).map_err(|e| Error::Deserialization(e, content.to_string()))
     }
 
     #[inline]
