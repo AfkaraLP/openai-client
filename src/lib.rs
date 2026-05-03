@@ -804,8 +804,8 @@ pub struct ToolCallArgDescriptor {
 #[non_exhaustive]
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum ToolCallArgType {
-    #[serde(rename = "bool")]
-    Bool,
+    #[serde(rename = "boolean")]
+    Boolean,
     #[serde(rename = "number")]
     Number,
     #[default]
@@ -817,7 +817,7 @@ impl ToolCallArgDescriptor {
     #[inline]
     #[must_use]
     pub const fn bool(name: &'static str, description: &'static str) -> Self {
-        Self::required(name, ToolCallArgType::Bool, description)
+        Self::required(name, ToolCallArgType::Boolean, description)
     }
 
     #[inline]
