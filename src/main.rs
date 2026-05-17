@@ -52,6 +52,9 @@ async fn main() {
             &ToolMap::new().register_tool(WeatherTool),
         )
         .await
+        .unwrap()
+        .0
+        .content
         .unwrap();
     println!("New Jersey Weather: {weather:#?}");
 
@@ -76,8 +79,8 @@ struct WeatherTool;
 
 #[async_trait]
 impl ToolCallFn for WeatherTool {
-    fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
-        vec![ToolCallArgDescriptor::string(
+    fn get_args(&self) -> Vec<ToolCallArg> {
+        vec![ToolCallArg::string(
             "location",
             "where to get the weather from",
         )]

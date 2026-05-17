@@ -48,35 +48,32 @@ impl ToolCallFn for EchoTool {
         format!("Echoed: {message}")
     }
 
-    fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
-        vec![ToolCallArgDescriptor::new(
-            true,
+    fn get_args(&self) -> Vec<ToolCallArg> {
+        vec![ToolCallArg::string(
             "message",
-            ToolCallArgType::String,
             "The message to echo",
         )]
     }
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let client = OpenAIClient::new(
-        "http://localhost:1234/v1".into(),
-        "your-model".into(),
+        "http://localhost:1234/v1",
+        "your-model",
         None,
     );
 
     let tools = ToolMap::new().register_tool(EchoTool);
 
     let response = client.run_agent(
-        &new_system_user_turn(
+        new_system_user_turn(
             "You are a helpful assistant with access to tools.",
             "Echo 'Hello World'"
         ),
-        tools,
-    ).await?;
+        &tools,
+    ).await.unwrap();
 
-    println!("Response: {}", response);
-    Ok(())
+    println!("Response: {}", response.0.content.unwrap());
 }
 ```

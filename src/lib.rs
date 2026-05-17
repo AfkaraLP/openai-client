@@ -1,21 +1,4 @@
-//! # `OpenAI` API
-//!
-//! Interact with `OpenAI` compatible APIs easily, and build agents with function calling rather swiftly.
-//!
-//! ## Quickstart
-//!
-//! ```rust
-//! use openai_client::prelude::*;
-//!
-//! pub fn main() {
-//!     let client = OpenAIClient::new(
-//!         "http://localhost:1234/v1",
-//!         "Qwen3/Qwen3-0.8B",
-//!         None,
-//!     );
-//!     client.get_completion(&[ChatCompletionMessageParam::new_system("hi")], &ToolMap::default());
-//!     // do things with the completions now
-//! }
+#![doc = include_str!("../README.md")]
 #![expect(
     clippy::implicit_return,
     clippy::question_mark_used,
@@ -84,6 +67,7 @@ impl<'tool> ToolMap<'tool> {
     }
 }
 
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum OpenAIAuth {
     BearerToken(String),
@@ -712,8 +696,8 @@ impl fmt::Display for AIChatRole {
 ///         foo(cool_arg, context).await
 ///     }
 ///
-///     fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
-///         vec![ToolCallArgDescriptor::string(
+///     fn get_args(&self) -> Vec<ToolCallArg> {
+///         vec![ToolCallArg::string(
 ///             "cool_arg",
 ///             "this is a really cool argument that the llm knows about now",
 ///         )]
@@ -732,7 +716,7 @@ impl fmt::Display for AIChatRole {
 #[async_trait]
 pub trait ToolCallFn {
     #[must_use]
-    fn get_args(&self) -> Vec<ToolCallArgDescriptor>;
+    fn get_args(&self) -> Vec<ToolCallArg>;
     #[must_use]
     fn get_description(&self) -> &'static str;
 
@@ -753,23 +737,12 @@ pub trait ToolCallFn {
         let name = self.get_name();
         let description = self.get_description();
         let args = self.get_args();
-        let required = args
+        let required: Vec<String> = args
             .iter()
-            .filter_map(|arg| arg.required.then_some(arg.name))
-            .collect::<Vec<&str>>();
-        let props: HashMap<String, serde_json::Value> = args
-            .iter()
-            .map(|arg_descriptor| {
-                let this = &arg_descriptor;
-                (
-                    this.name.to_owned(),
-                    serde_json::json!({
-                        "type": this.argtype,
-                        "description": this.description
-                    }),
-                )
-            })
+            .flat_map(ToolCallArg::get_required_names)
             .collect();
+        let props: serde_json::Map<String, serde_json::Value> =
+            args.iter().map(ToolCallArg::to_schema).collect();
         let json = serde_json::json!(
             {
                 "type": "function",
@@ -788,96 +761,168 @@ pub trait ToolCallFn {
     }
 }
 
-pub trait ToolOutput: Sized {
-    fn stringify(self) -> String;
-}
-
+// TODO: maybe make use of static borrows and self borrowing instead of Boxing to avoid so many unneccessary clone calls.
 #[non_exhaustive]
-#[derive(Debug, Clone, Default)]
-pub struct ToolCallArgDescriptor {
-    pub argtype: ToolCallArgType,
-    pub description: &'static str,
-    pub name: &'static str,
-    pub required: bool,
+#[derive(Debug, Clone)]
+pub enum ToolCallArg {
+    String {
+        name: String,
+        description: String,
+    },
+    Boolean {
+        name: String,
+        description: String,
+    },
+    Number {
+        name: String,
+        description: String,
+    },
+    Array {
+        name: String,
+        description: String,
+        items: Box<Self>,
+    },
+    Object {
+        name: String,
+        description: String,
+        props: Vec<Self>,
+    },
+    Optional(Box<Self>),
 }
 
-#[non_exhaustive]
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub enum ToolCallArgType {
-    #[serde(rename = "boolean")]
-    Boolean,
-    #[serde(rename = "number")]
-    Number,
-    #[default]
-    #[serde(rename = "string")]
-    String,
-}
-
-impl ToolCallArgDescriptor {
+impl ToolCallArg {
     #[inline]
     #[must_use]
-    pub const fn bool(name: &'static str, description: &'static str) -> Self {
-        Self::required(name, ToolCallArgType::Boolean, description)
+    pub fn string(name: impl Into<String>, description: impl Into<String>) -> Self {
+        let name = name.into();
+        let description = description.into();
+        Self::String { name, description }
     }
-
     #[inline]
     #[must_use]
-    pub const fn new(
-        argtype: ToolCallArgType,
-        description: &'static str,
-        name: &'static str,
-        required: bool,
-    ) -> Self {
-        Self {
-            argtype,
-            description,
+    pub fn bool(name: impl Into<String>, description: impl Into<String>) -> Self {
+        let name = name.into();
+        let description = description.into();
+        Self::Boolean { name, description }
+    }
+    #[inline]
+    #[must_use]
+    pub fn number(name: impl Into<String>, description: impl Into<String>) -> Self {
+        let name = name.into();
+        let description = description.into();
+        Self::Number { name, description }
+    }
+    #[inline]
+    #[must_use]
+    pub fn array(name: impl Into<String>, description: impl Into<String>, items: Self) -> Self {
+        let name = name.into();
+        let description = description.into();
+        let items = Box::new(items);
+        Self::Array {
             name,
-            required,
+            description,
+            items,
+        }
+    }
+    #[inline]
+    #[must_use]
+    pub fn object(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        props: Vec<Self>,
+    ) -> Self {
+        let name = name.into();
+        let description = description.into();
+        Self::Object {
+            name,
+            description,
+            props,
         }
     }
 
     #[inline]
     #[must_use]
-    pub const fn number(name: &'static str, description: &'static str) -> Self {
-        Self::required(name, ToolCallArgType::Number, description)
+    pub fn optional(arg: Self) -> Self {
+        Self::Optional(Box::new(arg))
     }
 
-    #[inline]
-    #[must_use]
-    pub const fn optional(
-        name: &'static str,
-        argtype: ToolCallArgType,
-        description: &'static str,
-    ) -> Self {
-        Self::new(argtype, description, name, false)
+    fn get_required_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        match self {
+            Self::String { name, .. }
+            | Self::Boolean { name, .. }
+            | Self::Number { name, .. }
+            | Self::Array { name, .. } => {
+                names.push(name.clone());
+            }
+            Self::Object {
+                name,
+                description: _,
+                props,
+            } => {
+                names.push(name.clone());
+                for prop in props {
+                    let mut req_names = prop.get_required_names();
+                    names.append(&mut req_names);
+                }
+            }
+            Self::Optional(_) => {}
+        }
+        names
+    }
+    fn to_schema(&self) -> (String, serde_json::Value) {
+        match self {
+            Self::String { name, description } => (
+                name.to_owned(),
+                serde_json::json!({"description": description, "type": "string"}),
+            ),
+            Self::Boolean { name, description } => (
+                name.to_owned(),
+                serde_json::json!({"description": description, "type": "boolean"}),
+            ),
+            Self::Number { name, description } => (
+                name.to_owned(),
+                serde_json::json!({"description": description, "type": "number"}),
+            ),
+            Self::Array {
+                name,
+                description,
+                items,
+            } => {
+                let arg_type = items.get_type_string();
+                (
+                    name.to_owned(),
+                    serde_json::json!( {"description": description, "type": "array", "items": {"type": arg_type}}),
+                )
+            }
+            Self::Object {
+                name,
+                description,
+                props,
+            } => {
+                let props: serde_json::Map<String, serde_json::Value> =
+                    props.iter().map(Self::to_schema).collect();
+                (
+                    name.clone(),
+                    serde_json::json!({"description": description, "type": "object", "properties": props}),
+                )
+            }
+            Self::Optional(new_arg_types) => new_arg_types.to_schema(),
+        }
     }
 
-    #[inline]
-    #[must_use]
-    pub const fn required(
-        name: &'static str,
-        argtype: ToolCallArgType,
-        description: &'static str,
-    ) -> Self {
-        Self::new(argtype, description, name, true)
+    fn get_type_string(&self) -> &'static str {
+        match self {
+            Self::String { .. } => "string",
+            Self::Boolean { .. } => "boolean",
+            Self::Number { .. } => "number",
+            Self::Array { .. } => "array",
+            Self::Object { .. } => "object",
+            Self::Optional(e) => e.get_type_string(),
+        }
     }
+}
 
-    #[inline]
-    #[must_use]
-    pub const fn string(name: &'static str, description: &'static str) -> Self {
-        Self::required(name, ToolCallArgType::String, description)
-    }
-
-    #[inline]
-    #[must_use]
-    pub const fn set_optional(mut self) -> Self {
-        self.required = false;
-        self
-    }
-    #[inline]
-    #[must_use]
-    pub const fn set_required(mut self) -> Self {
-        self.required = true;
-        self
-    }
+pub trait ToolOutput: Sized {
+    fn stringify(self) -> String;
 }

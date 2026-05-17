@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use openai_client::{
-    OpenAIClient, ToolCallArgDescriptor, ToolCallFn, ToolMap, new_system_user_turn,
-};
+use openai_client::{OpenAIClient, ToolCallArg, ToolCallFn, ToolMap, new_system_user_turn};
 
 struct State;
 struct Client;
@@ -62,8 +60,8 @@ impl<'a> ToolCallFn for SpawnSubAgent<'a> {
             .unwrap()
     }
 
-    fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
-        vec![ToolCallArgDescriptor::string(
+    fn get_args(&self) -> Vec<ToolCallArg> {
+        vec![ToolCallArg::string(
             "task",
             "the task that the agent should fulfill before stopping.",
         )]
@@ -90,7 +88,7 @@ impl ToolCallFn for SubAgentTool {
         "this is just a test".to_string()
     }
 
-    fn get_args(&self) -> Vec<ToolCallArgDescriptor> {
+    fn get_args(&self) -> Vec<ToolCallArg> {
         Vec::new()
     }
 }
