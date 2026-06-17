@@ -1,8 +1,8 @@
-# OpenAI Client
+# `OpenAI` Client
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 
-A simple Rust client for OpenAI-compatible APIs, with easy tool calling and agent building. I made this because tool calling with some generic OpenAI compatible endpoint like LM Studio was just so annoying with any Rust crate. So I built this as part of some project I was working on, and since I want to reuse it in other projects, I'm making it a crate on GitHub.
+A simple Rust client for OpenAI-compatible APIs, with easy tool calling and agent building. I made this because tool calling with some generic `OpenAI` compatible endpoint like LM Studio was just so annoying with any Rust crate. So I built this as part of some project I was working on, and since I want to reuse it in other projects, I'm making it a crate on GitHub.
 
 Nothing fancy, will probably not be well maintained or work for your use-case.
 

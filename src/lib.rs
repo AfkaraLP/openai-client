@@ -143,8 +143,12 @@ impl OpenAIClient {
         for msg in &mut res.choices {
             if let Some(content) = msg.message.content.take() {
                 if let Some((reasoning, actual)) = content.split_once("</think>") {
-                    msg.message.reasoning = Some(reasoning.to_string());
-                    msg.message.content = Some(actual.to_string());
+                    if actual.is_empty() {
+                        msg.message.content = Some(reasoning.to_string());
+                    } else {
+                        msg.message.reasoning = Some(reasoning.to_string());
+                        msg.message.content = Some(actual.to_string());
+                    }
                 } else {
                     msg.message.content = Some(content);
                 }
