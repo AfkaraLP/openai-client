@@ -230,7 +230,12 @@ impl OpenAIClient {
             serde_json::from_str(&res_str).map_err(|e| Error::Deserialization(e, res_str))?;
         let content = response
             .first()
-            .and_then(|response_message| response_message.content.as_deref())
+            .and_then(|msg| {
+                msg.content
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| msg.reasoning.as_deref().filter(|s| !s.is_empty()))
+            })
             .ok_or(Error::Response)?;
         serde_json::from_str(content).map_err(|e| Error::Deserialization(e, content.to_string()))
     }
