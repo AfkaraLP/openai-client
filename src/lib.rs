@@ -142,7 +142,13 @@ impl OpenAIClient {
         // to care anyway).
         for msg in &mut res.choices {
             if let Some(content) = msg.message.content.take() {
-                if let Some((reasoning, actual)) = content.split_once("</think>") {
+                if content.is_empty() {
+                    if let Some(reasoning) = msg.message.reasoning.take() {
+                        msg.message.content = Some(reasoning);
+                    } else {
+                        msg.message.content = Some(content);
+                    }
+                } else if let Some((reasoning, actual)) = content.split_once("</think>") {
                     if actual.is_empty() {
                         msg.message.content = Some(reasoning.to_string());
                     } else {
@@ -556,6 +562,7 @@ pub struct ChatCompletionResponseChoice {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChatCompletionResponseMessage {
     pub content: Option<String>,
+    #[serde(alias = "reasoning_content")]
     pub reasoning: Option<String>,
     pub role: AIChatRole,
     #[serde(default)]
