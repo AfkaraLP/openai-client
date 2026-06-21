@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use openai_client::{OpenAIClient, ToolCallArg, ToolCallFn, ToolMap, new_system_user_turn};
+use openai_client::{
+    OpenAIClient, new_system_user_turn,
+    tools::{ToolCallArg, ToolCallFn, ToolMap},
+};
 
 struct State;
 struct Client;
