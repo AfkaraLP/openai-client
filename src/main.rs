@@ -8,7 +8,7 @@
 #![expect(clippy::missing_docs_in_private_items, reason = "This is just testing")]
 
 use async_trait::async_trait;
-use openai_client::prelude::*;
+use openai_client::{prelude::*, tools::GenericTool};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -42,6 +42,9 @@ async fn main() {
             acc
         })
     );
+    let _some_tool = GenericTool::from_async("wow", "so_cool", vec![], |_args| async {
+        "Hello".to_string()
+    });
 
     let weather = client
         .run_agent(

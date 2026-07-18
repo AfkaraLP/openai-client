@@ -72,7 +72,10 @@ async fn main()  {
             "Echo 'Hello World'"
         ),
         &tools,
-    ).await.unwrap();
+    ).await;
+    let Ok(response) = response else {
+        return println!("Agent currently not available");
+    };
 
     println!("Response: {}", response.0.content.unwrap());
 }

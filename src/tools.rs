@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, hash_map::Values},
+    pin::Pin,
     time::Duration,
 };
 
@@ -305,6 +306,85 @@ impl ToolCallArg {
             Self::Object { .. } => "object",
             Self::Optional(e) => e.get_type_string(),
         }
+    }
+}
+
+type ToolFuture<'a> = Pin<Box<dyn Future<Output = String> + Send + 'a>>;
+
+pub struct GenericTool {
+    args: Vec<ToolCallArg>,
+    description: &'static str,
+    name: &'static str,
+    function: Box<dyn for<'a> Fn(&'a serde_json::Value) -> ToolFuture<'a> + Send + Sync>,
+}
+
+impl GenericTool {
+    /// # Create a generic tool with everything required to invoke it.
+    ///
+    /// > *Note*: this requires you to pin the output yourself, for easier implementation use `Self::from_async` instead
+    pub fn new<F>(
+        name: &'static str,
+        description: &'static str,
+        args: Vec<ToolCallArg>,
+        function: F,
+    ) -> Self
+    where
+        for<'a> F: Fn(&'a serde_json::Value) -> ToolFuture<'a> + Send + 'a + Sync,
+    {
+        Self {
+            args,
+            description,
+            name,
+            function: Box::new(function),
+        }
+    }
+
+    /// # Use a sync function with an internal async function for easier writing.
+    ///
+    /// ## Example usage:
+    ///
+    /// ```rust
+    /// use openai_client::tools::GenericTool;
+    ///
+    /// let some_tool = GenericTool::from_async("wow", "so_cool", vec![], |args| async {
+    ///     "Hello".to_string()
+    /// });
+    /// ```
+    pub fn from_async<F, Fut>(
+        name: &'static str,
+        description: &'static str,
+        args: Vec<ToolCallArg>,
+        function: F,
+    ) -> Self
+    where
+        for<'b> F: Fn(&serde_json::Value) -> Fut + Send + Sync + 'b,
+        for<'a> Fut: Future<Output = String> + Send + 'a,
+    {
+        Self {
+            args,
+            description,
+            name,
+            function: Box::new(move |args| Box::pin(function(args))),
+        }
+    }
+}
+
+#[async_trait]
+impl ToolCallFn for GenericTool {
+    fn get_args(&self) -> Vec<ToolCallArg> {
+        self.args.clone()
+    }
+
+    fn get_description(&self) -> &'static str {
+        self.description
+    }
+
+    fn get_name(&self) -> &'static str {
+        self.name
+    }
+
+    async fn invoke(&self, args: &serde_json::Value) -> String {
+        (self.function)(args).await
     }
 }
 
