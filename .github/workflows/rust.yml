@@ -16,8 +16,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
     - name: Lint
       run: cargo clippy -- -D clippy::pedantic -D clippy::nursery 
     - name: Run tests
