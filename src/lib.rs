@@ -72,8 +72,7 @@ impl OpenAIClient {
         messages: &[ChatCompletionMessageParam],
         tools: &ToolMap<'tool>,
     ) -> Result<ChatCompletionResponse> {
-        let req_tools: Vec<serde_json::Value> =
-            tools.values().map(|tool| tool.to_json_value()).collect();
+        let req_tools: Vec<serde_json::Value> = tools.schemas().cloned().collect();
         let request = ChatCompletionRequest {
             model: &self.model,
             tools: if req_tools.is_empty() {
@@ -81,7 +80,7 @@ impl OpenAIClient {
             } else {
                 Some(req_tools)
             },
-            messages: messages.to_vec(),
+            messages,
             temperature: self.temperature,
             parallel_tool_calls: None,
             response_format: None,
@@ -96,32 +95,39 @@ impl OpenAIClient {
                 OpenAIAuth::ApiKey { key, value } => reqbuilder.header(key, value),
             }
         }
-        let res_str = reqbuilder
+        let res = reqbuilder
             .send()
             .await
             .map_err(Error::Request)?
-            .text()
+            .bytes()
             .await
             .map_err(Error::Request)?;
-        let mut res: ChatCompletionResponse =
-            serde_json::from_str(&res_str).map_err(|e| Error::Deserialization(e, res_str))?;
+        let mut res: ChatCompletionResponse = serde_json::from_slice(&res).map_err(|e| {
+            Error::Deserialization(
+                e,
+                String::from_utf8(res.to_vec())
+                    .unwrap_or_else(|_| "failed to decode response".into()),
+            )
+        })?;
         // Smaller models (atleast on LM-Studio) sometimes put the reasoning in
         // the content instead (this fix is rather hacky but this library is too immature
         // to care anyway).
         for msg in &mut res.choices {
-            if let Some(content) = msg.message.content.take() {
+            if let Some(mut content) = msg.message.content.take() {
                 if content.is_empty() {
                     if let Some(reasoning) = msg.message.reasoning.take() {
                         msg.message.content = Some(reasoning);
                     } else {
                         msg.message.content = Some(content);
                     }
-                } else if let Some((reasoning, actual)) = content.split_once("</think>") {
-                    if actual.is_empty() {
-                        msg.message.content = Some(reasoning.to_string());
+                } else if let Some(split) = content.find("</think>") {
+                    let mut actual = content.split_off(split);
+                    let rest = actual.split_off("</think>".len());
+                    if rest.is_empty() {
+                        msg.message.content = Some(content);
                     } else {
-                        msg.message.reasoning = Some(reasoning.to_string());
-                        msg.message.content = Some(actual.to_string());
+                        msg.message.content = Some(rest);
+                        msg.message.reasoning = Some(content);
                     }
                 } else {
                     msg.message.content = Some(content);
@@ -164,7 +170,7 @@ impl OpenAIClient {
     ) -> Result<T> {
         let schema = schemars::schema_for!(T);
         let req = ChatCompletionRequest {
-            messages: messages.to_vec(),
+            messages,
             model: &self.model,
             temperature: self.temperature,
             tools: None,
@@ -317,9 +323,9 @@ impl OpenAIClient {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChatCompletionRequest<'model_info> {
-    pub messages: Vec<ChatCompletionMessageParam>,
+#[derive(Clone, Debug, Serialize)]
+pub struct ChatCompletionRequest<'model_info, 'messages> {
+    pub messages: &'messages [ChatCompletionMessageParam],
     pub model: &'model_info str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parallel_tool_calls: Option<bool>,
@@ -329,11 +335,11 @@ pub struct ChatCompletionRequest<'model_info> {
     pub tools: Option<Vec<serde_json::Value>>,
 }
 
-impl<'model_name> ChatCompletionRequest<'model_name> {
+impl<'model_name, 'messages> ChatCompletionRequest<'model_name, 'messages> {
     #[must_use]
     #[inline]
     pub const fn new(
-        messages: Vec<ChatCompletionMessageParam>,
+        messages: &'messages [ChatCompletionMessageParam],
         model: &'model_name str,
         parallel_tool_calls: Option<bool>,
         response_format: Option<ResponseFormat>,

@@ -9,33 +9,44 @@ use async_trait::async_trait;
 pub type BoxedTool<'tools> = Box<dyn ToolCallFn + Send + Sync + 'tools>;
 #[non_exhaustive]
 #[derive(Default)]
-pub struct ToolMap<'tool>(HashMap<&'tool str, BoxedTool<'tool>>);
+pub struct ToolMap<'tool> {
+    tools: HashMap<&'tool str, BoxedTool<'tool>>,
+    schemas: HashMap<&'tool str, serde_json::Value>,
+}
 
 impl<'tool> ToolMap<'tool> {
     #[inline]
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&BoxedTool<'_>> {
-        self.0.get(key)
+        self.tools.get(key)
     }
 
     #[inline]
     #[must_use]
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self::default()
     }
 
     #[inline]
     #[must_use]
     /// Add a tool to the context of the client - uses the builder pattern.
     pub fn register_tool<T: ToolCallFn + Send + Sync + 'tool>(mut self, tool: T) -> Self {
-        self.0.insert(tool.get_name(), Box::new(tool));
+        let name = tool.get_name();
+        let schema = tool.to_json_value();
+        self.tools.insert(name, Box::new(tool));
+        self.schemas.insert(name, schema);
         self
     }
 
     #[inline]
     #[must_use]
     pub fn values(&self) -> Values<'_, &str, BoxedTool<'_>> {
-        self.0.values()
+        self.tools.values()
+    }
+
+    #[inline]
+    pub fn schemas(&self) -> impl Iterator<Item = &serde_json::Value> {
+        self.schemas.values()
     }
 }
 
@@ -123,10 +134,10 @@ pub trait ToolCallFn {
         let name = self.get_name();
         let description = self.get_description();
         let args = self.get_args();
-        let required: Vec<String> = args
-            .iter()
-            .flat_map(ToolCallArg::get_required_names)
-            .collect();
+        let mut required: Vec<String> = Vec::new();
+        for arg in &args {
+            arg.collect_required_names(&mut required);
+        }
         let props: serde_json::Map<String, serde_json::Value> =
             args.iter().map(ToolCallArg::to_schema).collect();
         let json = serde_json::json!(
@@ -147,7 +158,6 @@ pub trait ToolCallFn {
     }
 }
 
-// TODO: maybe make use of static borrows and self borrowing instead of Boxing to avoid so many unneccessary clone calls.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum ToolCallArg {
@@ -232,8 +242,7 @@ impl ToolCallArg {
         Self::Optional(Box::new(arg))
     }
 
-    fn get_required_names(&self) -> Vec<String> {
-        let mut names = Vec::new();
+    fn collect_required_names(&self, names: &mut Vec<String>) {
         match self {
             Self::String { name, .. }
             | Self::Boolean { name, .. }
@@ -241,20 +250,14 @@ impl ToolCallArg {
             | Self::Array { name, .. } => {
                 names.push(name.clone());
             }
-            Self::Object {
-                name,
-                description: _,
-                props,
-            } => {
+            Self::Object { name, props, .. } => {
                 names.push(name.clone());
                 for prop in props {
-                    let mut req_names = prop.get_required_names();
-                    names.append(&mut req_names);
+                    prop.collect_required_names(names);
                 }
             }
             Self::Optional(_) => {}
         }
-        names
     }
     fn to_schema(&self) -> (String, serde_json::Value) {
         match self {
